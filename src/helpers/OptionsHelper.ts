@@ -44,6 +44,7 @@ export class OptionsHelper {
 
       "--cleanStart": Boolean,
       "--cleanEnd": Boolean,
+      "--cleanScope": String,
       "--cleanQuickLaunch": Boolean,
       "--cleanTopNavigation": Boolean,
 
@@ -133,6 +134,7 @@ export class OptionsHelper {
         false,
       cleanEnd: args["--cleanEnd"] || false,
       cleanStart: args["--cleanStart"] || false,
+      cleanScope: args["--cleanScope"] || options["cleanScope"] || null,
       confirm: args["--confirm"] || false,
       outputFolder: args["--outputFolder"] || "",
       siteDesign: options["siteDesign"] || null,
@@ -213,11 +215,13 @@ export class OptionsHelper {
     }
 
     if (options.cleanEnd && !options.confirm) {
+      const scopeMsg = options.cleanScope
+        ? ` within "${options.cleanScope}"`
+        : "";
       questions.push({
         type: "confirm",
         name: "confirm",
-        message:
-          "Are you sure you want to clean up all pages which have not been touched?",
+        message: `Are you sure you want to clean up all pages${scopeMsg} which have not been touched?`,
         default: false,
       });
     }

@@ -40,6 +40,7 @@ export class TelemetryHelper {
           cleanEnd: !!options.cleanEnd,
           cleanQuickLaunch: !!options.cleanQuickLaunch,
           cleanTopNavigation: !!options.cleanTopNavigation,
+          cleanScope: !!options.cleanScope,
           webPartTitle: !!options.webPartTitle,
         },
       });

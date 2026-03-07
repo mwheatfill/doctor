@@ -23,6 +23,7 @@ export interface CommandArguments {
 
   cleanEnd: boolean;
   cleanStart: boolean;
+  cleanScope: string | null;
   confirm: boolean;
 
   cleanQuickLaunch: boolean;

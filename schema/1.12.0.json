@@ -184,6 +184,13 @@
         "description": "Allows you to specify if you want to remove all the navigation elements defined in the TopNavigation navigation before adding the new navigation structure.",
         "default": false
       },
+      "cleanScope": {
+        "$id": "#/properties/cleanScope",
+        "type": "string",
+        "title": "cleanScope",
+        "description": "Limits --cleanEnd to only remove untouched pages within this SitePages subfolder (e.g., 'artifacts').",
+        "examples": ["artifacts"]
+      },
       "disableComments": {
         "$id": "#/properties/disableComments",
         "type": "boolean",

@@ -41,11 +41,32 @@ export class PagesHelper {
   ): Promise<Observable<string>> {
     return new Observable((observer) => {
       (async () => {
-        const untouched = this.getUntouchedPages().filter(
-          (slug) =>
-            !slug.toLowerCase().startsWith("templates") &&
-            slug.endsWith(".aspx")
-        );
+        const untouched = this.getUntouchedPages().filter((slug) => {
+          const lowerSlug = slug.toLowerCase();
+
+          if (lowerSlug.startsWith("templates")) {
+            return false;
+          }
+
+          if (!lowerSlug.endsWith(".aspx")) {
+            return false;
+          }
+
+          // Scope cleanup to a specific folder when configured
+          if (options.cleanScope) {
+            const scope = options.cleanScope
+              .toLowerCase()
+              .replace(/^\/+/, "")
+              .replace(/\/+$/, "");
+            return lowerSlug.startsWith(`${scope}/`);
+          }
+
+          return true;
+        });
+
+        if (options.cleanScope) {
+          Logger.debug(`Clean scope limited to: ${options.cleanScope}`);
+        }
         Logger.debug(`Removing the following files`);
         Logger.debug(untouched);
         for (const slug of untouched) {
