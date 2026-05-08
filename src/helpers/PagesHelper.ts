@@ -78,7 +78,7 @@ export class PagesHelper {
               const relUrl = FileHelpers.getRelUrl(webUrl, filePath);
               await execScript<string>(
                 ArgumentsHelper.parse(
-                  `spo file remove --webUrl "${webUrl}" --url "${relUrl}" --confirm`
+                  `spo file remove --webUrl "${webUrl}" --url "${relUrl}" --force`
                 ),
                 CliCommand.getRetry()
               );
@@ -316,15 +316,75 @@ export class PagesHelper {
       // Web part needs to be updated
       await execScript(
         ArgumentsHelper.parse(
-          `spo page control set --webUrl "${webUrl}" --name "${slug}" --id "${wpId}" --webPartData @${wpData}`
+          `spo page control set --webUrl "${webUrl}" --pageName "${slug}" --id "${wpId}" --webPartData @${wpData}`
         ),
         CliCommand.getRetry()
       );
     } else {
-      // Add new markdown web part
+      // Add new markdown web part — ensure page has a section first
       await execScript(
         ArgumentsHelper.parse(
-          `spo page clientsidewebpart add --webUrl "${webUrl}" --pageName "${slug}" --webPartId 1ef5ed11-ce7b-44be-bc5e-4abd55101d16 --webPartData @${wpData}`
+          `spo page section add --webUrl "${webUrl}" --pageName "${slug}" --sectionTemplate OneColumn`
+        ),
+        CliCommand.getRetry()
+      );
+      await execScript(
+        ArgumentsHelper.parse(
+          `spo page clientsidewebpart add --webUrl "${webUrl}" --pageName "${slug}" --webPartId 1ef5ed11-ce7b-44be-bc5e-4abd55101d16 --webPartData @${wpData} --section 1 --column 1`
+        ),
+        CliCommand.getRetry()
+      );
+    }
+  }
+
+  /**
+   * Inserts or creates the Magic Markdown web part control (file URL mode).
+   * Uses the Magic Markdown web part ID and sets fileUrl + searchableContent properties.
+   */
+  public static async insertOrCreateMagicMarkdownControl(
+    webPartTitle: string,
+    fileUrl: string,
+    markdownContent: string,
+    slug: string,
+    webUrl: string,
+    options: CommandArguments,
+    wpId: string = null,
+    tocOverrides?: {
+      showToc?: boolean;
+      tocTitle?: string;
+      tocDepth?: number;
+      tocCollapsible?: boolean;
+    }
+  ) {
+    Logger.debug(
+      `Insert Magic Markdown webpart for page ${slug} - fileUrl: ${fileUrl} - Control ID: ${wpId}`
+    );
+
+    const wpData = await MarkdownHelper.getMagicMarkdownJsonData(
+      webPartTitle,
+      fileUrl,
+      markdownContent,
+      tocOverrides
+    );
+
+    if (wpId) {
+      await execScript(
+        ArgumentsHelper.parse(
+          `spo page control set --webUrl "${webUrl}" --pageName "${slug}" --id "${wpId}" --webPartData @${wpData}`
+        ),
+        CliCommand.getRetry()
+      );
+    } else {
+      // Ensure the page has at least one section before adding the web part
+      await execScript(
+        ArgumentsHelper.parse(
+          `spo page section add --webUrl "${webUrl}" --pageName "${slug}" --sectionTemplate OneColumn`
+        ),
+        CliCommand.getRetry()
+      );
+      await execScript(
+        ArgumentsHelper.parse(
+          `spo page clientsidewebpart add --webUrl "${webUrl}" --pageName "${slug}" --webPartId ${options.magicMarkdownWebPartId} --webPartData @${wpData} --section 1 --column 1`
         ),
         CliCommand.getRetry()
       );
@@ -374,13 +434,31 @@ export class PagesHelper {
     const pageId = await this.getPageId(webUrl, slug);
     const pageList = await ListHelpers.getSitePagesList(webUrl);
     if (pageId && pageList) {
+      // m365 cli's --systemUpdate path embeds the value in a CSOM XML payload.
+      // Unescaped XML special characters (notably `&`) in the description
+      // trigger "An error occurred while parsing EntityName" failures from
+      // SharePoint's XML parser. Escape the value before embedding.
+      const safeDescription = PagesHelper.xmlEscape(description);
       await execScript(
         ArgumentsHelper.parse(
-          `spo listitem set --listId "${pageList.Id}" --id ${pageId} --webUrl "${webUrl}" --Description "${description}" --systemUpdate`
+          `spo listitem set --listId "${pageList.Id}" --id ${pageId} --webUrl "${webUrl}" --Description "${safeDescription}" --systemUpdate`
         ),
         CliCommand.getRetry()
       );
     }
+  }
+
+  /**
+   * Escape XML special characters so a string value can be safely embedded
+   * in a CSOM XML payload (used by m365 cli's --systemUpdate path).
+   */
+  private static xmlEscape(s: string): string {
+    return s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
   }
 
   /**

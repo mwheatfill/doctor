@@ -46,4 +46,9 @@ export interface CommandArguments {
   shortcodesFolder?: string;
 
   tocLevels: number[];
+
+  useFileMode: boolean;
+  artifactLibrary: string;
+  artifactLibraryFolder?: string;
+  magicMarkdownWebPartId: string;
 }

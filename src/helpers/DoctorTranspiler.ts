@@ -8,6 +8,9 @@ import {
   PageFrontMatter,
 } from "@models";
 import {
+  ArgumentsHelper,
+  CliCommand,
+  execScript,
   FileHelpers,
   FolderHelpers,
   FrontMatterHelper,
@@ -20,10 +23,12 @@ import {
 } from "@helpers";
 import { Observable, Subscriber } from "rxjs";
 import { basename, join, dirname } from "path";
-import { existsAsync, mkdirAsync, readFileAsync, writeFileAsync } from "@utils";
+import { existsAsync, mkdirAsync, readFileAsync, rmAsync, writeFileAsync } from "@utils";
 
 export class DoctorTranspiler {
   private static converter = new MarkdownIt({ html: true, breaks: true });
+  // Track all artifact URLs uploaded during this run (for cleanEnd orphan detection)
+  private static uploadedArtifacts: Set<string> = new Set();
 
   /**
    * Process the retrieved Markdown files
@@ -117,6 +122,9 @@ export class DoctorTranspiler {
 
         let { title, description, draft, layout, header, template, metadata } =
           markup.data as PageFrontMatter;
+        const { showToc, tocTitle, tocDepth, tocCollapsible } =
+          markup.data as PageFrontMatter;
+        const tocOverrides = { showToc, tocTitle, tocDepth, tocCollapsible };
         let slug =
           languagePageSlug ||
           FrontMatterHelper.getSlug(
@@ -124,6 +132,28 @@ export class DoctorTranspiler {
             options.startFolder,
             file
           );
+
+        // Auto-populate topicHeader from ArtifactType metadata when not explicitly set
+        if (metadata && metadata.ArtifactType && (!header || !header.topicHeader)) {
+          if (!header) {
+            header = {};
+          }
+          header.showTopicHeader = true;
+          header.topicHeader = metadata.ArtifactType;
+        }
+
+        // Map friendly author email to Author0 claims format and header.authors
+        if (metadata && metadata.author) {
+          const email = metadata.author;
+          metadata.Author0 = `[{'Key':'i:0#.f|membership|${email}'}]`;
+          delete metadata.author;
+          if (!header) {
+            header = {};
+          }
+          if (!header.authors) {
+            header.authors = [email];
+          }
+        }
 
         // Check if comments are disabled on global level, or overwrite it from page level
         const disablePageComments =
@@ -228,16 +258,40 @@ export class DoctorTranspiler {
                 (c: Control) =>
                   c.webPartData && c.webPartData.title === webPartTitle
               );
-              await PagesHelper.insertOrCreateControl(
-                webPartTitle,
-                markup.content,
-                slug,
-                webUrl,
-                options,
-                markdownWp ? markdownWp.id : null,
-                options.markdown,
-                file.endsWith(`.machinetranslated.md`)
-              );
+
+              if (options.useFileMode) {
+                // Magic Markdown file URL mode: upload .md to SiteArtifacts, then
+                // insert web part with fileUrl + searchableContent for Copilot/search
+                observer.next(`Uploading markdown source for ${filename}`);
+
+                const artifactFileUrl = await this.uploadMarkdownArtifact(
+                  file,
+                  markup.content,
+                  options
+                );
+
+                await PagesHelper.insertOrCreateMagicMarkdownControl(
+                  webPartTitle,
+                  artifactFileUrl,
+                  markup.content,
+                  slug,
+                  webUrl,
+                  options,
+                  markdownWp ? markdownWp.id : null,
+                  tocOverrides
+                );
+              } else {
+                await PagesHelper.insertOrCreateControl(
+                  webPartTitle,
+                  markup.content,
+                  slug,
+                  webUrl,
+                  options,
+                  markdownWp ? markdownWp.id : null,
+                  options.markdown,
+                  file.endsWith(`.machinetranslated.md`)
+                );
+              }
             }
 
             // Check if metadata needs to be added to the page
@@ -309,6 +363,129 @@ export class DoctorTranspiler {
   }
 
   /**
+   * Upload the markdown file to the artifact library, flattened into
+   * a single folder matching the page slug prefix (e.g. PublishedContent/artifacts/).
+   * Returns the server-relative file URL.
+   */
+  private static async uploadMarkdownArtifact(
+    filePath: string,
+    content: string,
+    options: CommandArguments
+  ): Promise<string> {
+    const { startFolder, artifactLibraryFolder, webUrl } = options;
+    const artifactLibrary = artifactLibraryFolder || "PublishedContent";
+
+    // Use only the first subfolder from the relative path (e.g. "artifacts")
+    // to keep all markdown files flat: PublishedContent/artifacts/
+    const uniStartPath = startFolder.replace(/\\/g, "/");
+    const uniFilePath = filePath.replace(/\\/g, "/");
+    const relativePath = uniFilePath.replace(uniStartPath, "");
+    const allFolders = dirname(relativePath).split("/").filter((s) => s);
+    const topFolder = allFolders.length > 0 ? [allFolders[0]] : [];
+
+    let crntFolder = artifactLibrary;
+    if (topFolder.length > 0) {
+      crntFolder = await FolderHelpers.create(crntFolder, topFolder, webUrl);
+    }
+
+    // Write the processed markdown content to a temp file for upload
+    const tempFilePath = join(
+      process.cwd(),
+      "temp",
+      basename(filePath)
+    );
+    await mkdirAsync(dirname(tempFilePath), { recursive: true });
+    await writeFileAsync(tempFilePath, content, { encoding: "utf-8" });
+
+    // Upload with overwrite (content may have changed)
+    await FileHelpers.create(crntFolder, tempFilePath, webUrl, true);
+
+    // Clean up temp file
+    try {
+      await rmAsync(tempFilePath);
+    } catch (e) {
+      // Best-effort cleanup
+    }
+
+    // Return the server-relative URL to the uploaded file
+    const relWebUrl = webUrl.split("sharepoint.com").pop();
+    const artifactUrl = `${relWebUrl}/${crntFolder}/${basename(filePath)}`.replace(/ /g, "%20");
+    this.uploadedArtifacts.add(artifactUrl.toLowerCase());
+    return artifactUrl;
+  }
+
+  /**
+   * Clean up artifact files in Published Content that were not uploaded
+   * during this publish run. Mirrors PagesHelper.clean() for pages.
+   */
+  public static async cleanArtifacts(
+    webUrl: string,
+    artifactLibraryFolder: string,
+    cleanScope: string
+  ): Promise<Observable<string>> {
+    return new Observable((observer) => {
+      (async () => {
+        // List all files in the artifact library recursively
+        let filesData: any = await execScript<string>(
+          ArgumentsHelper.parse(
+            `spo file list --webUrl "${webUrl}" --folderUrl "/${artifactLibraryFolder}" --recursive -o json`
+          ),
+          CliCommand.getRetry()
+        );
+        if (filesData && typeof filesData === "string") {
+          filesData = JSON.parse(filesData);
+        }
+
+        const relWebUrl = webUrl.split("sharepoint.com").pop();
+        const allFiles = (filesData || []).filter(
+          (f: any) => f.ServerRelativeUrl && !f.ServerRelativeUrl.includes("/Forms/")
+        );
+
+        Logger.debug(`Uploaded artifacts this run: ${[...this.uploadedArtifacts]}`);
+
+        for (const file of allFiles) {
+          const fileUrl: string = file.ServerRelativeUrl.toLowerCase();
+
+          // Scope to cleanScope folder if configured (e.g. "artifacts")
+          if (cleanScope) {
+            const scope = cleanScope.toLowerCase().replace(/^\/+/, "").replace(/\/+$/, "");
+            const relPath = fileUrl.split(`/${artifactLibraryFolder.toLowerCase()}/`).pop() || "";
+            if (!relPath.startsWith(`${scope}/`)) {
+              continue;
+            }
+          }
+
+          // Skip files that were uploaded during this run
+          if (this.uploadedArtifacts.has(fileUrl)) {
+            continue;
+          }
+
+          // Also check with the relWebUrl prefix form
+          const altUrl = `${relWebUrl}/${artifactLibraryFolder}/${fileUrl.split(`/${artifactLibraryFolder.toLowerCase()}/`).pop()}`.toLowerCase();
+          if (this.uploadedArtifacts.has(altUrl)) {
+            continue;
+          }
+
+          try {
+            Logger.debug(`Cleaning up artifact: ${file.ServerRelativeUrl}`);
+            observer.next(`Cleaning up artifact: ${file.ServerRelativeUrl}`);
+            await execScript<string>(
+              ArgumentsHelper.parse(
+                `spo file remove --webUrl "${webUrl}" --url "${file.ServerRelativeUrl}" --force`
+              ),
+              CliCommand.getRetry()
+            );
+          } catch (e) {
+            Logger.debug(`Failed to remove artifact: ${e.message}`);
+          }
+        }
+
+        observer.complete();
+      })();
+    });
+  }
+
+  /**
    * Process images referenced in the file
    * @param $
    * @param imgElms
@@ -339,10 +516,17 @@ export class DoctorTranspiler {
       const imgPath = join(dirname(filePath), imgSource);
 
       const uniStartPath = startFolder.replace(/\\/g, "/");
-      const folders = imgDirectory
+      let folders = imgDirectory
         .replace(/\\/g, "/")
         .replace(uniStartPath, "")
-        .split("/");
+        .split("/")
+        .filter((s) => s);
+
+      // In file mode, flatten to [topFolder, "assets"] (e.g. artifacts/assets)
+      if (options.useFileMode && folders.length > 0) {
+        folders = [folders[0], "assets"];
+      }
+
       let crntFolder = assetLibrary;
 
       // Start folder creation process
@@ -357,6 +541,14 @@ export class DoctorTranspiler {
         );
         contents = contents.replace(new RegExp(imgSource, "g"), imgUrl);
         StatusHelper.addImage();
+        // Track for artifact cleanup (normalize to server-relative URL)
+        if (options.useFileMode && imgUrl) {
+          let normalizedUrl = imgUrl;
+          if (normalizedUrl.includes("sharepoint.com")) {
+            normalizedUrl = normalizedUrl.split("sharepoint.com").pop();
+          }
+          this.uploadedArtifacts.add(normalizedUrl.toLowerCase());
+        }
       } catch (e) {
         return Promise.reject(
           new Error(

@@ -4,6 +4,7 @@ import { Authenticate } from "@commands";
 import {
   DoctorTranspiler,
   FileHelpers,
+  ListHelpers,
   Logger,
   MarkdownHelper,
   NavigationHelper,
@@ -55,10 +56,30 @@ export class Publish {
       {
         title: `Clean up all the files`,
         task: async () => {
-          await FileHelpers.cleanUp(options, "sitepages");
+          // When cleanScope is set, only clean within that subfolder of sitepages
+          const sitePagesFolder = options.cleanScope
+            ? `sitepages/${options.cleanScope}`
+            : "sitepages";
+          await FileHelpers.cleanUp(options, sitePagesFolder);
           await FileHelpers.cleanUp(options, options.assetLibrary);
+          if (options.useFileMode && options.artifactLibraryFolder) {
+            const artifactFolder = options.cleanScope
+              ? `${options.artifactLibraryFolder}/${options.cleanScope}`
+              : options.artifactLibraryFolder;
+            await FileHelpers.cleanUp(options, artifactFolder);
+          }
         },
         enabled: () => options.cleanStart && options.confirm,
+      },
+      {
+        title: `Ensure artifact library with NoCrawl`,
+        task: async () => {
+          const folderName = await ListHelpers.ensureNoCrawlLibrary(webUrl, options.artifactLibrary);
+          options.artifactLibraryFolder = folderName;
+          // In file mode, images go to the same NoCrawl library as markdown sources
+          options.assetLibrary = folderName;
+        },
+        enabled: () => options.useFileMode,
       },
       {
         title: `Multilingual site configuration`,
@@ -92,6 +113,15 @@ export class Publish {
         title: `Post cleanup`,
         task: async (ctx: any) => await Cleanup.start(ctx, options),
         enabled: () => options.cleanEnd && options.confirm,
+      },
+      {
+        title: `Post cleanup: artifacts`,
+        task: async () => await DoctorTranspiler.cleanArtifacts(
+          webUrl,
+          options.artifactLibraryFolder,
+          options.cleanScope
+        ),
+        enabled: () => options.cleanEnd && options.confirm && options.useFileMode && !!options.artifactLibraryFolder,
       },
     ])
       .run()

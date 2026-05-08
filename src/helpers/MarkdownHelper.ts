@@ -135,6 +135,80 @@ export class MarkdownHelper {
   }
 
   /**
+   * Retrieve the JSON data for the Magic Markdown web part (file URL mode).
+   * Uploads the .md file to SiteArtifacts and creates web part properties
+   * with fileUrl for rendering and searchableContent for Copilot/search indexing.
+   *
+   * The optional `tocOverrides` parameter lets per-page front matter override
+   * the default TOC properties (showToc, tocTitle, tocDepth, tocCollapsible).
+   */
+  public static async getMagicMarkdownJsonData(
+    webPartTitle: string,
+    fileUrl: string,
+    markdownContent: string,
+    tocOverrides?: {
+      showToc?: boolean;
+      tocTitle?: string;
+      tocDepth?: number;
+      tocCollapsible?: boolean;
+    }
+  ): Promise<string> {
+    const o = tocOverrides || {};
+    const wpData = {
+      title: webPartTitle,
+      serverProcessedContent: {
+        searchablePlainTexts: {
+          searchableContent: this.stripMarkdown(markdownContent),
+        },
+        htmlStrings: {},
+      },
+      dataVersion: "1.0",
+      properties: {
+        fileUrl: fileUrl,
+        searchableContent: "",
+        markdown: "",
+        showToc: typeof o.showToc === "boolean" ? o.showToc : false,
+        tocTitle: typeof o.tocTitle === "string" ? o.tocTitle : "",
+        tocDepth: typeof o.tocDepth === "number" ? o.tocDepth : 3,
+        tocCollapsible: typeof o.tocCollapsible === "boolean" ? o.tocCollapsible : false,
+        enableMermaid: true,
+        maxContentWidth: "960px",
+      },
+    };
+
+    return await TempDataHelper.create(wpData);
+  }
+
+  /**
+   * Strip markdown syntax to produce plain text for the search index.
+   *
+   * The fenced-code regex uses a backreference so that 3-backtick fences
+   * close with 3 backticks and 4-backtick (or longer) fences close with the
+   * same count. Without this, nested fences (e.g., a `::: details` container
+   * showing an inline code block) would be miscaught and leak code content
+   * into the searchable text — which has caused SharePoint's
+   * serverProcessedContent JSON parser to fail with "Unterminated string"
+   * errors when the leaked content contains unescaped quotes.
+   */
+  public static stripMarkdown(md: string): string {
+    return md
+      .replace(/(`{3,})[\s\S]*?\1/g, '')
+      .replace(/`([^`]*)`/g, '$1')
+      .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/<[^>]+>/g, '')
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/(\*{1,3}|_{1,3})(.*?)\1/g, '$2')
+      .replace(/~~(.*?)~~/g, '$1')
+      .replace(/^>\s?/gm, '')
+      .replace(/^[-*_]{3,}\s*$/gm, '')
+      .replace(/^[\s]*[-*+]\s+/gm, '')
+      .replace(/^[\s]*\d+\.\s+/gm, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  /**
    * Retrieve the CSS styles for code highlighting
    * @param light
    */

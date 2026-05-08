@@ -56,6 +56,9 @@ export class OptionsHelper {
       "--disableComments": Boolean,
       "--disableTracking": Boolean,
 
+      "--useFileMode": Boolean,
+      "--artifactLibrary": String,
+
       "--skipExistingPages": Boolean,
       "--skipExisting": Boolean,
       "--skipPages": Boolean,
@@ -111,7 +114,7 @@ export class OptionsHelper {
       webPartTitle:
         args["--webPartTitle"] ||
         options["webPartTitle"] ||
-        "doctor-placeholder",
+        ((args["--useFileMode"] || options["useFileMode"]) ? "magic-markdown" : "doctor-placeholder"),
       skipPrecheck:
         (args["--skipPrecheck"] as any) || options["skipPrecheck"] || false,
       skipExistingPages:
@@ -158,6 +161,11 @@ export class OptionsHelper {
       pageTemplate: args["--pageTemplate"] || options["pageTemplate"] || null,
       disableComments:
         args["--disableComments"] || options["disableComments"] || false,
+      useFileMode:
+        args["--useFileMode"] || options["useFileMode"] || false,
+      artifactLibrary:
+        args["--artifactLibrary"] || options["artifactLibrary"] || "Published Content",
+      magicMarkdownWebPartId: options["magicMarkdownWebPartId"] || "a9d2dac1-3301-4740-ba9a-daeef91c2143",
     };
   }
 

@@ -15,4 +15,11 @@ export interface PageFrontMatter {
   metadata?: { [name: string]: string };
   author?: any;
   type?: "translation";
+
+  // Magic Markdown web part property overrides. When present, override the
+  // hardcoded defaults in MarkdownHelper.getMagicMarkdownJsonData.
+  showToc?: boolean;
+  tocTitle?: string;
+  tocDepth?: number;
+  tocCollapsible?: boolean;
 }
