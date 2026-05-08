@@ -154,9 +154,12 @@ export class FileHelpers {
 
     const pageList = await ListHelpers.getSitePagesList(webUrl);
 
+    // SourceHash is added by ListHelpers.ensureSourceHashColumn at publish
+    // start; including it here gives the per-file skip-if-unchanged logic
+    // access to the last-published hash without an extra round trip.
     let filesData: File[] | string = await execScript<string>(
       ArgumentsHelper.parse(
-        `spo listitem list --webUrl "${webUrl}" --listId "${pageList.Id}" --fields "ID,Title,FileRef" -o json`
+        `spo listitem list --webUrl "${webUrl}" --listId "${pageList.Id}" --fields "ID,Title,FileRef,SourceHash" -o json`
       ),
       CliCommand.getRetry()
     );

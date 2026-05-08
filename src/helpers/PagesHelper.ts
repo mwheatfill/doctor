@@ -32,6 +32,25 @@ export class PagesHelper {
   }
 
   /**
+   * Find an existing page by slug (e.g. "artifacts/adr-001-foo"). Returns
+   * the page record (with SourceHash and other fields) if found, or null.
+   * Used by the per-file skip-if-unchanged check before any heavy
+   * per-page processing.
+   */
+  public static findPageBySlug(webUrl: string, slug: string): File | null {
+    if (!PagesHelper.pages || PagesHelper.pages.length === 0) {
+      return null;
+    }
+    const relativeUrl = FileHelpers.getRelUrl(webUrl, `sitepages/${slug}`);
+    const target = relativeUrl.toLowerCase();
+    return (
+      PagesHelper.pages.find(
+        (p: File) => p.FileRef && p.FileRef.toLowerCase() === target
+      ) || null
+    );
+  }
+
+  /**
    * Cleaning up all the untouched pages
    * @param webUrl
    */

@@ -113,4 +113,39 @@ export class ListHelpers {
     Logger.debug(`Artifact library root folder: ${rootFolderName}`);
     return rootFolderName;
   }
+
+  /**
+   * Ensure the SourceHash column exists on the Site Pages list. The column
+   * stores a SHA-256 hash of the source markdown content at last publish,
+   * letting subsequent runs skip pages whose content hasn't changed.
+   *
+   * Idempotent: checks for the column first via `spo field get`; only
+   * creates it on miss. The column is a plain Text field (SHA-256 hex
+   * digests are 64 chars, well under the 255-char limit).
+   *
+   * Bootstrap behavior: existing pages have no SourceHash on first run
+   * after this column is added, so they all process fully and the hash
+   * gets populated. Subsequent runs benefit.
+   */
+  public static async ensureSourceHashColumn(webUrl: string): Promise<void> {
+    try {
+      await execScript(
+        ArgumentsHelper.parse(
+          `spo field get --webUrl "${webUrl}" --listTitle "Site Pages" --title "SourceHash" --output json`
+        ),
+        false
+      );
+      Logger.debug(`SourceHash column already exists on Site Pages`);
+    } catch (e) {
+      Logger.debug(`Creating SourceHash column on Site Pages...`);
+      const fieldXml = `<Field Type='Text' DisplayName='SourceHash' Name='SourceHash' StaticName='SourceHash' />`;
+      await execScript(
+        ArgumentsHelper.parse(
+          `spo field add --webUrl "${webUrl}" --listTitle "Site Pages" --xml "${fieldXml}"`
+        ),
+        CliCommand.getRetry()
+      );
+      Logger.debug(`SourceHash column created on Site Pages`);
+    }
+  }
 }

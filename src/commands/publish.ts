@@ -82,6 +82,11 @@ export class Publish {
         enabled: () => options.useFileMode,
       },
       {
+        title: `Ensure SourceHash column on Site Pages`,
+        task: async () => await ListHelpers.ensureSourceHashColumn(webUrl),
+        enabled: () => !options.skipPages,
+      },
+      {
         title: `Multilingual site configuration`,
         task: async (ctx: any) => await MultilingualHelper.start(ctx, options),
         enabled: () => !!options.multilingual,

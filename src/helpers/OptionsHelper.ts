@@ -65,6 +65,8 @@ export class OptionsHelper {
       "--skipNavigation": Boolean,
       "--skipSiteDesign": Boolean,
 
+      "--force": Boolean,
+
       "-a": "--auth",
       "-f": "--folder",
       "-u": "--url",
@@ -158,6 +160,7 @@ export class OptionsHelper {
         args["--cleanQuickLaunch"] || options["cleanQuickLaunch"] || false,
       cleanTopNavigation:
         args["--cleanTopNavigation"] || options["cleanTopNavigation"] || false,
+      force: args["--force"] || options["force"] || false,
       pageTemplate: args["--pageTemplate"] || options["pageTemplate"] || null,
       disableComments:
         args["--disableComments"] || options["disableComments"] || false,

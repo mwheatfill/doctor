@@ -23,6 +23,7 @@ import {
 } from "@helpers";
 import { Observable, Subscriber } from "rxjs";
 import { basename, join, dirname } from "path";
+import { createHash } from "crypto";
 import { existsAsync, mkdirAsync, readFileAsync, rmAsync, writeFileAsync } from "@utils";
 
 export class DoctorTranspiler {
@@ -89,6 +90,12 @@ export class DoctorTranspiler {
 
       let contents = await readFileAsync(file, { encoding: "utf-8" });
       if (contents) {
+        // Compute the source hash up front. SHA-256 of the full staged
+        // file bytes (frontmatter + body, after collect.mjs's deterministic
+        // wikilink/TOC processing). Used downstream to skip pages whose
+        // content hasn't changed since last publish.
+        const sourceHash = createHash("sha256").update(contents).digest("hex");
+
         const markup: matter.GrayMatterFile<string> = matter(contents);
 
         // Don't process language files, these will be processed later in the process
@@ -132,6 +139,36 @@ export class DoctorTranspiler {
             options.startFolder,
             file
           );
+
+        // Skip-if-unchanged: if an existing page has a SourceHash that
+        // matches the current source content, skip the entire per-page
+        // pipeline (header set, markdown upload, web part insert, metadata,
+        // publish, description). The --force flag bypasses this check.
+        // Translations always process to keep multilingual sync consistent.
+        if (!options.force && !languagePageSlug) {
+          const existingPage = PagesHelper.findPageBySlug(webUrl, slug);
+          if (
+            existingPage &&
+            existingPage.SourceHash &&
+            existingPage.SourceHash === sourceHash
+          ) {
+            Logger.debug(
+              `Hash match for ${filename} (${sourceHash.slice(0, 12)}…) — skipping`
+            );
+            observer.next(`Skipped (unchanged): ${filename}`);
+            // Still track the artifact URL so cleanEnd doesn't sweep it.
+            const artifactUrl = this.predictArtifactUrl(file, options);
+            if (artifactUrl) {
+              this.uploadedArtifacts.add(artifactUrl.toLowerCase());
+            }
+            return;
+          }
+          if (existingPage && existingPage.SourceHash) {
+            Logger.debug(
+              `Hash mismatch for ${filename}: ${existingPage.SourceHash.slice(0, 12)}… → ${sourceHash.slice(0, 12)}…`
+            );
+          }
+        }
 
         // Auto-populate topicHeader from ArtifactType metadata when not explicitly set
         if (metadata && metadata.ArtifactType && (!header || !header.topicHeader)) {
@@ -294,9 +331,16 @@ export class DoctorTranspiler {
               }
             }
 
-            // Check if metadata needs to be added to the page
-            if (metadata) {
-              await PagesHelper.setPageMetadata(webUrl, slug, metadata);
+            // Always set page metadata after a successful publish, with
+            // SourceHash merged in. This means subsequent runs can compare
+            // content hashes and skip unchanged pages. Translations are
+            // excluded — they're tracked under their language slug.
+            const finalMetadata: { [k: string]: any } = { ...(metadata || {}) };
+            if (!languagePageSlug) {
+              finalMetadata.SourceHash = sourceHash;
+            }
+            if (Object.keys(finalMetadata).length > 0) {
+              await PagesHelper.setPageMetadata(webUrl, slug, finalMetadata);
             }
 
             // Check if page needs to be published
@@ -360,6 +404,34 @@ export class DoctorTranspiler {
         }
       }
     }
+  }
+
+  /**
+   * Compute the server-relative URL the markdown source would have if
+   * it were uploaded — without making any network calls. Mirrors
+   * uploadMarkdownArtifact's URL construction. Used by the skip-if-unchanged
+   * path to keep already-published artifacts out of cleanEnd's orphan sweep.
+   */
+  private static predictArtifactUrl(
+    filePath: string,
+    options: CommandArguments
+  ): string | null {
+    const { startFolder, artifactLibraryFolder, webUrl } = options;
+    if (!options.useFileMode) return null;
+    const artifactLibrary = artifactLibraryFolder || "PublishedContent";
+    const uniStartPath = startFolder.replace(/\\/g, "/");
+    const uniFilePath = filePath.replace(/\\/g, "/");
+    const relativePath = uniFilePath.replace(uniStartPath, "");
+    const allFolders = dirname(relativePath).split("/").filter((s) => s);
+    const topFolder = allFolders.length > 0 ? allFolders[0] : "";
+    const crntFolder = topFolder
+      ? `${artifactLibrary}/${topFolder}`
+      : artifactLibrary;
+    const relWebUrl = webUrl.split("sharepoint.com").pop();
+    return `${relWebUrl}/${crntFolder}/${basename(filePath)}`.replace(
+      / /g,
+      "%20"
+    );
   }
 
   /**

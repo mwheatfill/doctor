@@ -22,4 +22,10 @@ export interface File {
   UIVersionLabel: string;
   UniqueId: string;
   FileRef?: string;
+  /**
+   * SHA-256 hash of the source markdown file content as of the last
+   * successful publish. Used by the per-page skip-if-unchanged logic.
+   * The column is auto-created on the Site Pages list at publish start.
+   */
+  SourceHash?: string;
 }

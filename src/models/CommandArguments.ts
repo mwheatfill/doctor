@@ -29,6 +29,17 @@ export interface CommandArguments {
   cleanQuickLaunch: boolean;
   cleanTopNavigation: boolean;
 
+  /**
+   * Bypass the SourceHash skip check. By default, pages whose source
+   * content hash matches the value stored on the page in SharePoint
+   * are skipped (no header update, no markdown re-upload, no metadata
+   * touch, no publish, no description update). Set this to true to
+   * force every page through the full pipeline — useful after Doctor
+   * itself changes (web part property additions, schema changes, etc.)
+   * so that all existing pages pick up the new behavior.
+   */
+  force: boolean;
+
   pageTemplate: string | null;
 
   menu?: Menu;
