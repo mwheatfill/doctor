@@ -156,7 +156,12 @@ export class DoctorTranspiler {
               `Hash match for ${filename} (${sourceHash.slice(0, 12)}…) — skipping`
             );
             observer.next(`Skipped (unchanged): ${filename}`);
-            // Still track the artifact URL so cleanEnd doesn't sweep it.
+            // Mark the page as processed so cleanEnd doesn't sweep it
+            // (getUntouchedPages uses processedPages, not source presence).
+            if (existingPage.ID) {
+              PagesHelper.markProcessed(slug, existingPage.ID);
+            }
+            // Track the artifact URL too so cleanEnd skips the .md source.
             const artifactUrl = this.predictArtifactUrl(file, options);
             if (artifactUrl) {
               this.uploadedArtifacts.add(artifactUrl.toLowerCase());

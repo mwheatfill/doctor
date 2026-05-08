@@ -51,6 +51,15 @@ export class PagesHelper {
   }
 
   /**
+   * Register a page as processed by this run. Skipped pages still need
+   * to be marked so cleanEnd's getUntouchedPages() doesn't sweep them
+   * as orphans. Idempotent — safe to call before createPageIfNotExists.
+   */
+  public static markProcessed(slug: string, pageId: number): void {
+    PagesHelper.processedPages[slug] = pageId;
+  }
+
+  /**
    * Cleaning up all the untouched pages
    * @param webUrl
    */
