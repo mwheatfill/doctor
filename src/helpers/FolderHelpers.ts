@@ -37,12 +37,21 @@ export class FolderHelpers {
               throw "Folder doesn't seem to exist yet";
             }
           } catch (e) {
-            await execScript(
-              ArgumentsHelper.parse(
-                `spo folder add --webUrl "${webUrl}" --parentFolderUrl "/${crntFolder}" --name "${folder}"`
-              ),
-              CliCommand.getRetry()
-            );
+            try {
+              await execScript(
+                ArgumentsHelper.parse(
+                  `spo folder add --webUrl "${webUrl}" --parentFolderUrl "/${crntFolder}" --name "${folder}"`
+                ),
+                CliCommand.getRetry()
+              );
+            } catch (addErr) {
+              // Folder may already exist (race condition or get-check failure) — ignore
+              const errMsg = addErr && (addErr.message || String(addErr));
+              if (!errMsg.includes("already exists")) {
+                throw addErr;
+              }
+              Logger.debug(`Folder "${folder}" already exists, continuing`);
+            }
           }
 
           this.checkedFolders.push(folderToProcess);

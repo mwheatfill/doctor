@@ -96,7 +96,7 @@ export class FileHelpers {
               .pop()}`;
             await execScript<string>(
               ArgumentsHelper.parse(
-                `spo file remove --webUrl "${webUrl}" --url "${filePath}" --confirm`
+                `spo file remove --webUrl "${webUrl}" --url "${filePath}" --force`
               ),
               CliCommand.getRetry()
             );
@@ -127,7 +127,7 @@ export class FileHelpers {
               .pop()}`;
             await execScript<string>(
               ArgumentsHelper.parse(
-                `spo folder remove --webUrl "${webUrl}" --folderUrl "${folderPath}" --confirm`
+                `spo folder remove --webUrl "${webUrl}" --url "${folderPath}" --force`
               ),
               CliCommand.getRetry()
             );
@@ -156,7 +156,7 @@ export class FileHelpers {
 
     let filesData: File[] | string = await execScript<string>(
       ArgumentsHelper.parse(
-        `spo listitem list --webUrl "${webUrl}" --id "${pageList.Id}" --fields "ID,Title,FileRef" -o json`
+        `spo listitem list --webUrl "${webUrl}" --listId "${pageList.Id}" --fields "ID,Title,FileRef" -o json`
       ),
       CliCommand.getRetry()
     );
@@ -182,7 +182,7 @@ export class FileHelpers {
     Logger.debug(`Uploading file "${imgPath}" to ${crntFolder}"`);
     await execScript(
       ArgumentsHelper.parse(
-        `spo file add --webUrl "${webUrl}" --folder "${crntFolder}" --path "${imgPath}"`
+        `spo file add --webUrl "${webUrl}" --folder "${crntFolder}" --path "${imgPath}" --overwrite`
       ),
       CliCommand.getRetry()
     );
